@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link href="styles/car.css" rel="stylesheet" />
+  <title>Car Showcase</title>
+</head>
+
+<body>
+  <header>
+    <nav>
+      <ul>
+        <li><a href="index.html">首页</a></li>
+        <li><a href="poems.html">诗词</a></li>
+        <li><a href="forum.html">一言</a></li>
+        <li><a href="car.html">车</a></li>
+      </ul>
+    </nav>
+  </header>
+
+  <section id="home">
+    <h1>Welcome to the Car Showcase</h1>
+    <div class="carousel">
+      <div class="slides">
+        <img src="images/car_display1.jpg" alt="Car 1">
+        <img src="images/car_display2.jpg" alt="Car 2">
+        <img src="images/car_display3.jpg" alt="Car 3">
+      </div>
+      <!-- Navigation buttons -->
+      <button class="prev" onclick="prevSlide()">&#10094;</button>
+      <button class="next" onclick="nextSlide()">&#10095;</button>
+    </div>
+  </section>
+
+  <div class="sidebar">
+    <h2 style="color: aliceblue;">Car Brands</h2>
+    <ul>
+      <li><a href="#bmw">BMW</a></li>
+      <li><a href="#audi">Audi</a></li>
+    </ul>
+  </div>
+
+  <hr>
+
+  <section id="bmw">
+    <h2>BMW Models</h2>
+    <h2>宝马</h2>
+    <div class="car-series-menu">
+      <button onclick="showSeries('bmw-i')">BMW i 系列</button>
+      <button onclick="showSeries('bmw-2')">BMW 2 系列</button>
+      <button onclick="showSeries('bmw-3')">BMW 3 系列</button>
+    </div>
+
+    <div id="bmw-i" class="bmw-series-content" style="display:none;">
+      <div class="car-item">
+        <img src="images/bwm_i_1.png" alt="BWM_i">
+        <img src="images/bwm_i_2.webp">
+        <img src="images/bwm_i_3.webp">
+      </div>
+    </div>
+
+    <div id="bmw-2" class="bmw-series-content" style="display:none;">
+      <div class="car-item">
+        <img src="images/bwm_2_1.jpg" alt="BWM_2">
+      </div>
+    </div>
+
+    <div id="bmw-3" class="bmw-series-content" style="display:none;">
+      <div class="car-item">
+        <img src="images/bwm_3_1.jpg" alt="BWM_3">
+      </div>
+    </div>
+
+  </section>
+
+  <section id="audi">
+    <h2>Audi Models</h2>
+    <h2>奥迪</h2>
+
+    <div class="car-series-menu">
+      <button onclick="showSeries('audi-A4')">Audi A4</button>
+      <button onclick="showSeries('audi-A6')">Audi A6</button>
+      <button onclick="showSeries('audi-RS7')">Audi RS7</button>
+    </div>
+
+    <div id="audi-A4" class="audi-series-content" style="display: none;">
+      <div class="car-item">
+        <img src="images/audi_A4_1.jpg" alt="Audi A4">
+        <img src="images/audi_A4_2.jpg">
+      </div>
+    </div>
+
+    <div id="audi-A6" class="audi-series-content" style="display: none;">
+      <div class="car-item">
+        <img src="images/audi_A6_1.jpg" alt="Audi A6">
+        <img src="images/audi_A6_2.jpg">
+        <img src="images/audi_A6_3.jpg">
+      </div>
+    </div>
+
+    <div id="audi-RS7" class="audi-series-content" style="display: none;">
+      <div class="car-item">
+        <img src="images/audi_RS7_1.jpg" alt="Audi RS7">
+        <img src="images/audi_RS7_2.jpg">
+        <img src="images/audi_RS7_3.jpg">
+        <img src="images/audi_RS7_4.jpg">
+      </div>
+    </div>
+
+  </section>
+
+  <script src="scripts/car.js" defer></script>
+</body>
+
+</html>

@@ -1,0 +1,122 @@
+/* 基本样式 */
+body {
+    font-family: Arial, sans-serif;
+    margin: 0;
+    padding: 0;
+    background-color: #f5f5f5;
+}
+
+h1 {
+    text-align: center;
+}
+
+
+/* 导航栏样式 */
+nav {
+    font-size: 20px;
+    margin: 0;
+    padding: 0;
+    background-color: white;
+}
+
+nav ul {
+    list-style-type: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    justify-content: center;
+}
+
+nav ul li {
+    margin: 0 15px;
+}
+
+nav ul li a {
+    color: #000;
+    text-decoration: none;
+    padding: 14px 20px;
+    display: block;
+    position: relative;
+    transition: border-bottom 0.3s ease;
+}
+
+/* 鼠标悬停时的样式 */
+nav ul li a:hover {
+    border-bottom: 4px solid rgb(66, 214, 66);
+    color: #000;
+}
+
+/* 当前选中的导航项样式 */
+nav ul li a.active {
+    border-bottom: 4px solid rgb(66, 214, 66);
+    color: #000;
+}
+
+.button-container {
+    -webkit-appearance: none; /* 去掉 Safari 和 Chrome 的默认样式 */
+    -moz-appearance: none;    /* 去掉 Firefox 的默认样式 */
+    appearance: none;         /* 去掉所有浏览器的默认样式 */
+  }
+
+.button-container {
+    display: block;
+    margin: auto;
+    background-color: #4CAF50; /* 按钮背景色 */
+    color: white;              /* 字体颜色 */
+    border: none;              /* 无边框 */
+    padding: 10px 20px;       /* 内边距，上下10px，左右20px */
+    text-align: center;        /* 文字居中 */
+    text-decoration: none;     /* 去掉下划线 */
+    font-size: 16px;           /* 字体大小 */
+    cursor: pointer;           /* 鼠标悬停时变为手指 */
+    border-radius: 5px;       /* 圆角 */
+    transition: background-color 0.3s; /* 背景色变化过渡效果 */
+  }
+  
+
+.index-img {
+    display: block;
+    margin: auto;
+    padding: 0;
+}
+
+.carousel {
+    position: relative;
+    width: 100%;
+    max-width: 600px;
+    margin: auto;
+    overflow: hidden;
+}
+
+.slides {
+    display: flex;
+    transition: transform 0.5s ease-in-out;
+}
+
+.slides img {
+    width: 100%;
+    border-radius: 10px;
+}
+
+button.prev, button.next {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    background-color: rgba(0, 0, 0, 0.5);
+    color: white;
+    border: none;
+    padding: 10px;
+    cursor: pointer;
+}
+
+button.prev {
+    left: 10px;
+}
+
+button.next {
+    right: 10px;
+}
+
+button:hover {
+    background-color: rgba(0, 0, 0, 0.8);
+}

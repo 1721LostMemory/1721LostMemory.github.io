@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="zh">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>一言</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <link rel="stylesheet" href="styles/forum.css" />
+</head>
+
+<body>
+    <nav>
+        <ul>
+            <li><a href="index.html">首页</a></li>
+            <li><a href="poems.html">诗词</a></li>
+            <li><a href="forum.html">一言</a></li>
+            <li><a href="car.html">车</a></li>
+        </ul>
+    </nav>
+
+    <div class="comment-section">
+        <h2>一言</h2>
+
+        <div class="comment-form">
+            <textarea id="commentInput" placeholder="在这里写一句今天想对自己说的话叭！"></textarea>
+            <button onclick="addComment()">提交评论</button>
+        </div>
+        <ul id="commentList" class="comment-list">
+            <!-- 评论会被添加到这里 -->
+        </ul>
+    </div>
+    <script src="scripts/forum.js" defer ></script>
+</body>
+
+</html>
