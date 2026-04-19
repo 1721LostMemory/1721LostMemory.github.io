@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>连线消除（拖拽版）</title>
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <main class="app">
+    <section class="board-shell">
+      <div id="board" class="board" aria-label="14行10列棋盘" role="grid"></div>
+    </section>
+
+    <section class="controls" aria-label="游戏控制">
+      <button id="hintBtn" type="button">提示</button>
+      <button id="shuffleBtn" type="button">打乱</button>
+      <button id="restartBtn" type="button">重开</button>
+      <button id="musicBtn" type="button">音乐：开</button>
+    </section>
+  </main>
+
+  <div id="resultModal" class="result-modal" role="dialog" aria-modal="true" aria-labelledby="resultTitle">
+    <div class="result-card">
+      <h2 id="resultTitle">游戏结果</h2>
+      <p id="resultBody">-</p>
+      <button id="resultActionBtn" type="button">确定</button>
+    </div>
+  </div>
+
+  <script src="./script.js"></script>
+</body>
+</html>
