@@ -6,6 +6,9 @@ const DRAG_START_THRESHOLD = 8;
 const AUTO_CLEAR_FLASH_MS = 220;
 const HINT_SHOW_MS = 1100;
 const TYPE_DANCE_MS = 420;
+const BATTLE_COUNTDOWN_MS = 3000;
+const MODE_ENDLESS = "endless";
+const MODE_BATTLE = "battle";
 
 const TILE_TYPES = [
   "🍎", "🍊", "🍋", "🍉", "🍇", "🍓", "🍑", "🥝",
@@ -23,16 +26,39 @@ const resultModalEl = document.getElementById("resultModal");
 const resultTitleEl = document.getElementById("resultTitle");
 const resultBodyEl = document.getElementById("resultBody");
 const resultActionBtn = document.getElementById("resultActionBtn");
+const homeScreenEl = document.getElementById("homeScreen");
+const gameScreenEl = document.getElementById("gameScreen");
+const homeEndlessBtn = document.getElementById("homeEndlessBtn");
+const homeBattleBtn = document.getElementById("homeBattleBtn");
+const backHomeBtn = document.getElementById("backHomeBtn");
+const battlePanelEl = document.getElementById("battlePanel");
+const createBattleBtn = document.getElementById("createBattleBtn");
+const shareBattleBtn = document.getElementById("shareBattleBtn");
+const copyBattleLinkBtn = document.getElementById("copyBattleLinkBtn");
+const startBattleBtn = document.getElementById("startBattleBtn");
+const battleLinkInput = document.getElementById("battleLinkInput");
+const battleStatusEl = document.getElementById("battleStatusText");
+const battleTimerEl = document.getElementById("battleTimer");
+const launchParams = new URLSearchParams(window.location.search);
+const launchMode = launchParams.get("mode");
+const launchHostId = launchParams.get("host");
+const launchSeed = launchParams.get("seed");
 
 let nextTileId = 1;
+let cachedCellSizePx = 0;
+let renderScheduled = false;
+let pendingFullRender = true;
+const tileElementById = new Map();
 
 class BackgroundMusic {
   constructor() {
     this.ctx = null;
     this.master = null;
-    this.loopTimer = null;
+    this.loopTimeout = null;
+    this.isRunning = false;
     this.step = 0;
-    this.notes = [261.63, 329.63, 392.0, 493.88, 440.0, 392.0, 329.63, 349.23];
+    this.rootProgression = [220.0, 246.94, 196.0, 174.61];
+    this.melodyPattern = [0, 3, 5, 7, 5, 3, 2, 0];
   }
 
   ensureContext() {
@@ -45,37 +71,56 @@ class BackgroundMusic {
     }
     this.ctx = new AudioCtx();
     this.master = this.ctx.createGain();
-    this.master.gain.value = 0.05;
+    this.master.gain.value = 0.42;
     this.master.connect(this.ctx.destination);
   }
 
   start() {
     this.ensureContext();
-    if (!this.ctx || this.loopTimer) {
+    if (!this.ctx || this.isRunning) {
       return;
     }
     this.ctx.resume();
-    this.loopTimer = setInterval(() => this.playTick(), 320);
+    this.isRunning = true;
+    this.scheduleNextBar(0);
   }
 
-  playTick() {
+  scheduleNextBar(delayMs) {
+    if (!this.isRunning) {
+      return;
+    }
+    this.loopTimeout = setTimeout(() => {
+      if (!this.isRunning) {
+        return;
+      }
+      this.playBar();
+      this.scheduleNextBar(1450);
+    }, delayMs);
+  }
+
+  playBar() {
     if (!this.ctx || !this.master) {
       return;
     }
-    const now = this.ctx.currentTime;
-    const note = this.notes[this.step % this.notes.length];
-    this.step += 1;
+    const now = this.ctx.currentTime + 0.02;
+    const root = this.rootProgression[this.step % this.rootProgression.length];
+    const melodyOffset = this.melodyPattern[this.step % this.melodyPattern.length];
+    const melody = root * Math.pow(2, melodyOffset / 12);
 
-    this.playOneShot(now, note, 0.18, "triangle", 0.075);
+    this.playTone(now, root, 1.18, "sine", 0.04, 0.2);
+    this.playTone(now + 0.03, root * 1.4983, 1.05, "triangle", 0.03, 0.18);
+    this.playTone(now + 0.34, melody, 0.26, "triangle", 0.04, 0.09);
     if (this.step % 2 === 0) {
-      this.playOneShot(now + 0.05, note * 2, 0.11, "sine", 0.04);
+      this.playTone(now + 0.84, melody * 1.122, 0.22, "sine", 0.03, 0.08);
     }
+    this.step += 1;
   }
 
   stop() {
-    if (this.loopTimer) {
-      clearInterval(this.loopTimer);
-      this.loopTimer = null;
+    this.isRunning = false;
+    if (this.loopTimeout) {
+      clearTimeout(this.loopTimeout);
+      this.loopTimeout = null;
     }
   }
 
@@ -85,9 +130,9 @@ class BackgroundMusic {
       return;
     }
     this.ctx.resume();
-    const now = this.ctx.currentTime;
-    this.playOneShot(now, 640, 0.08, "square", 0.12);
-    this.playOneShot(now + 0.07, 780, 0.09, "triangle", 0.1);
+    const now = this.ctx.currentTime + 0.01;
+    this.playTone(now, 520, 0.075, "sine", 0.08, 0.05);
+    this.playTone(now + 0.06, 660, 0.08, "triangle", 0.065, 0.05);
   }
 
   playEliminateFx() {
@@ -96,9 +141,9 @@ class BackgroundMusic {
       return;
     }
     this.ctx.resume();
-    const now = this.ctx.currentTime;
-    this.playOneShot(now, 420, 0.11, "triangle", 0.14);
-    this.playOneShot(now + 0.09, 540, 0.12, "triangle", 0.12);
+    const now = this.ctx.currentTime + 0.01;
+    this.playTone(now, 392, 0.09, "triangle", 0.1, 0.06);
+    this.playTone(now + 0.1, 523.25, 0.12, "sine", 0.085, 0.08);
   }
 
   playPickupFx(extraCount = 1) {
@@ -108,13 +153,13 @@ class BackgroundMusic {
     }
     this.ctx.resume();
     const count = Math.max(1, Math.min(extraCount, 4));
-    const now = this.ctx.currentTime;
+    const now = this.ctx.currentTime + 0.01;
     for (let i = 0; i < count; i += 1) {
-      this.playOneShot(now + i * 0.042, 1180 + i * 120, 0.06, "square", 0.11);
+      this.playTone(now + i * 0.04, 760 + i * 95, 0.055, "sine", 0.06, 0.04);
     }
   }
 
-  playOneShot(startAt, frequency, duration, type, peakGain) {
+  playTone(startAt, frequency, duration, type, peakGain, release = 0.1) {
     if (!this.ctx || !this.master) {
       return;
     }
@@ -123,20 +168,23 @@ class BackgroundMusic {
     osc.type = type;
     osc.frequency.setValueAtTime(frequency, startAt);
     gain.gain.setValueAtTime(0.0001, startAt);
-    gain.gain.exponentialRampToValueAtTime(peakGain, startAt + 0.02);
-    gain.gain.exponentialRampToValueAtTime(0.0001, startAt + duration);
+    gain.gain.exponentialRampToValueAtTime(peakGain, startAt + 0.03);
+    gain.gain.exponentialRampToValueAtTime(0.0001, startAt + duration + release);
     osc.connect(gain);
     gain.connect(this.master);
     osc.start(startAt);
-    osc.stop(startAt + duration + 0.02);
+    osc.stop(startAt + duration + release + 0.03);
   }
 }
 
 const state = {
   board: createEmptyBoard(),
+  view: "home",
+  mode: MODE_ENDLESS,
   drag: null,
   snapback: null,
   busy: false,
+  boardLocked: false,
   gameOver: null,
   clickedTileId: null,
   shakeType: null,
@@ -147,7 +195,22 @@ const state = {
   clickTimer: null,
   resultType: null,
   musicEnabled: true,
-  music: new BackgroundMusic()
+  music: new BackgroundMusic(),
+  battle: {
+    role: null,
+    seed: null,
+    peer: null,
+    connection: null,
+    connected: false,
+    inviteLink: "",
+    myResult: null,
+    opponentResult: null,
+    timerRunning: false,
+    timerStartTs: 0,
+    timerElapsedMs: 0,
+    timerRaf: null,
+    countdownTimer: null
+  }
 };
 
 function createEmptyBoard() {
@@ -190,9 +253,9 @@ function inBounds(row, col) {
   return row >= 0 && row < ROWS && col >= 0 && col < COLS;
 }
 
-function shuffleArray(arr) {
+function shuffleArray(arr, rng = Math.random) {
   for (let i = arr.length - 1; i > 0; i -= 1) {
-    const j = Math.floor(Math.random() * (i + 1));
+    const j = Math.floor(rng() * (i + 1));
     [arr[i], arr[j]] = [arr[j], arr[i]];
   }
   return arr;
@@ -202,9 +265,147 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function getCellSizePx() {
+function hashSeed(input) {
+  const text = String(input ?? "seed");
+  let h = 1779033703 ^ text.length;
+  for (let i = 0; i < text.length; i += 1) {
+    h = Math.imul(h ^ text.charCodeAt(i), 3432918353);
+    h = (h << 13) | (h >>> 19);
+  }
+  return h >>> 0;
+}
+
+function createSeededRandom(seedText) {
+  let seed = hashSeed(seedText);
+  return function seededRandom() {
+    seed = (seed + 0x6D2B79F5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function createShortId() {
+  return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
+}
+
+function formatBattleMs(ms) {
+  const safeMs = Math.max(0, Math.floor(ms));
+  const minutes = Math.floor(safeMs / 60000);
+  const seconds = Math.floor((safeMs % 60000) / 1000);
+  const millis = safeMs % 1000;
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}.${String(millis).padStart(3, "0")}`;
+}
+
+function setBattleStatus(message) {
+  if (battleStatusEl) {
+    battleStatusEl.textContent = message;
+  }
+}
+
+function setBattleTimerText(ms = 0) {
+  if (battleTimerEl) {
+    battleTimerEl.textContent = formatBattleMs(ms);
+  }
+}
+
+function stopBattleTimer() {
+  const battle = state.battle;
+  battle.timerRunning = false;
+  if (battle.timerRaf) {
+    cancelAnimationFrame(battle.timerRaf);
+    battle.timerRaf = null;
+  }
+}
+
+function tickBattleTimer() {
+  const battle = state.battle;
+  if (!battle.timerRunning) {
+    return;
+  }
+  battle.timerElapsedMs = performance.now() - battle.timerStartTs;
+  setBattleTimerText(battle.timerElapsedMs);
+  battle.timerRaf = requestAnimationFrame(tickBattleTimer);
+}
+
+function startBattleTimer() {
+  const battle = state.battle;
+  stopBattleTimer();
+  battle.timerRunning = true;
+  battle.timerStartTs = performance.now();
+  battle.timerElapsedMs = 0;
+  setBattleTimerText(0);
+  tickBattleTimer();
+}
+
+function clearBattleCountdown() {
+  if (state.battle.countdownTimer) {
+    clearTimeout(state.battle.countdownTimer);
+    state.battle.countdownTimer = null;
+  }
+}
+
+function resetBattleRoundData() {
+  const battle = state.battle;
+  clearBattleCountdown();
+  stopBattleTimer();
+  battle.myResult = null;
+  battle.opponentResult = null;
+  battle.timerElapsedMs = 0;
+  setBattleTimerText(0);
+}
+
+function updateViewUi() {
+  if (homeScreenEl) {
+    homeScreenEl.hidden = state.view !== "home";
+  }
+  if (gameScreenEl) {
+    gameScreenEl.hidden = state.view !== "game";
+  }
+}
+
+function setView(view) {
+  state.view = view;
+  updateViewUi();
+}
+
+function updateModeUi() {
+  const isBattle = state.mode === MODE_BATTLE;
+  if (gameScreenEl) {
+    gameScreenEl.classList.toggle("battle-mode", isBattle);
+  }
+  if (battlePanelEl) {
+    battlePanelEl.hidden = !isBattle;
+  }
+}
+
+function copyToClipboard(text) {
+  if (!text) {
+    return Promise.reject(new Error("empty"));
+  }
+  if (navigator.clipboard?.writeText) {
+    return navigator.clipboard.writeText(text);
+  }
+  if (!battleLinkInput) {
+    return Promise.reject(new Error("no-input"));
+  }
+  battleLinkInput.value = text;
+  battleLinkInput.select();
+  const ok = document.execCommand("copy");
+  battleLinkInput.setSelectionRange(0, 0);
+  return ok ? Promise.resolve() : Promise.reject(new Error("copy-failed"));
+}
+
+function refreshBoardMetrics() {
   const rect = boardEl.getBoundingClientRect();
-  return rect.width / COLS;
+  cachedCellSizePx = rect.width / COLS;
+}
+
+function getCellSizePx() {
+  if (!cachedCellSizePx) {
+    refreshBoardMetrics();
+  }
+  return cachedCellSizePx;
 }
 
 function clearInteractionEffects() {
@@ -224,23 +425,24 @@ function clearInteractionEffects() {
 
 function syncControlAvailability() {
   const lockedByLose = state.gameOver === "lose";
-  hintBtn.disabled = lockedByLose;
-  shuffleBtn.disabled = lockedByLose;
-  restartBtn.disabled = lockedByLose;
+  const battleLocked = state.mode === MODE_BATTLE;
+  hintBtn.disabled = lockedByLose || battleLocked;
+  shuffleBtn.disabled = lockedByLose || battleLocked;
+  restartBtn.disabled = lockedByLose || battleLocked;
 }
 
 function makeTile(type) {
   return { id: nextTileId++, type };
 }
 
-function generateFilledBoard() {
+function generateFilledBoard(rng = Math.random) {
   const tiles = [];
   for (let i = 0; i < PAIR_COUNT; i += 1) {
-    const type = TILE_TYPES[Math.floor(Math.random() * TILE_TYPES.length)];
+    const type = TILE_TYPES[Math.floor(rng() * TILE_TYPES.length)];
     tiles.push(makeTile(type));
     tiles.push(makeTile(type));
   }
-  shuffleArray(tiles);
+  shuffleArray(tiles, rng);
   const board = createEmptyBoard();
   let index = 0;
   for (let row = 0; row < ROWS; row += 1) {
@@ -251,15 +453,14 @@ function generateFilledBoard() {
   return board;
 }
 
-function initializeBoard() {
+function initializeBoard(seedText = null) {
   nextTileId = 1;
-  for (let attempt = 0; attempt < 300; attempt += 1) {
-    const board = generateFilledBoard();
-    if (findAnyRemovablePair(board)) {
-      return board;
-    }
+  const rng = seedText ? createSeededRandom(seedText) : Math.random;
+  const board = generateFilledBoard(rng);
+  if (findAnyRemovablePair(board)) {
+    return board;
   }
-  return generateGuaranteedBoard();
+  return forceAtLeastOnePair(board, gatherRemainingTiles(board));
 }
 
 function generateGuaranteedBoard() {
@@ -549,6 +750,10 @@ function evaluateGameState() {
     state.gameOver = "win";
     setStatus("全部消除，胜利！");
     syncControlAvailability();
+    if (state.mode === MODE_BATTLE) {
+      handleLocalBattleRoundEnd("win");
+      return;
+    }
     showResultModal("win");
     return;
   }
@@ -557,6 +762,10 @@ function evaluateGameState() {
     state.gameOver = "lose";
     setStatus("当前已无可执行消除操作，失败。");
     syncControlAvailability();
+    if (state.mode === MODE_BATTLE) {
+      handleLocalBattleRoundEnd("lose");
+      return;
+    }
     showResultModal("lose");
     return;
   }
@@ -564,18 +773,18 @@ function evaluateGameState() {
   hideResultModal();
   state.gameOver = null;
   syncControlAvailability();
-  if (!state.busy) {
+  if (!state.busy && state.mode === MODE_ENDLESS) {
     setStatus("拖拽后仅当起手选中卡片可消除时才生效。");
   }
 }
 
 function checkGameOverSoon(delay = 220) {
   setTimeout(() => {
-    if (state.busy || state.drag) {
+    if (state.busy || state.drag || state.boardLocked) {
       return;
     }
     evaluateGameState();
-    renderBoard();
+    renderBoard(false);
   }, delay);
 }
 
@@ -672,17 +881,17 @@ function startSnapback(drag) {
     sign: drag.sign,
     offsetPx: drag.deltaPx
   };
-  renderBoard();
+  renderBoard(false);
   requestAnimationFrame(() => {
     if (!state.snapback) {
       return;
     }
     state.snapback.offsetPx = 0;
-    renderBoard();
+    renderBoard(false);
   });
   setTimeout(() => {
     state.snapback = null;
-    renderBoard();
+    renderBoard(false);
   }, 200);
 }
 
@@ -692,7 +901,7 @@ async function resolveMoveElimination(selectedTileId) {
   if (!pair) {
     state.busy = false;
     evaluateGameState();
-    renderBoard();
+    renderBoard(false);
     return;
   }
 
@@ -700,7 +909,7 @@ async function resolveMoveElimination(selectedTileId) {
   state.autoRemoveIds.add(pair.a.tile.id);
   state.autoRemoveIds.add(pair.b.tile.id);
   playEliminateSfx();
-  renderBoard();
+  renderBoard(false);
   await sleep(AUTO_CLEAR_FLASH_MS);
 
   state.board[pair.a.row][pair.a.col] = null;
@@ -741,7 +950,7 @@ function playPickupSfx(extraCount) {
 
 async function handleCardClick(row, col) {
   const tile = state.board[row][col];
-  if (!tile || state.busy) {
+  if (!tile || state.busy || state.boardLocked) {
     return;
   }
 
@@ -753,7 +962,7 @@ async function handleCardClick(row, col) {
     state.autoRemoveIds.add(match.tile.id);
     playEliminateSfx();
     setStatus(`已点击消除 ${tile.type}。`);
-    renderBoard();
+    renderBoard(false);
     await sleep(AUTO_CLEAR_FLASH_MS);
 
     state.board[row][col] = null;
@@ -771,14 +980,14 @@ async function handleCardClick(row, col) {
   state.shakeType = tile.type;
   playClickSfx();
   setStatus(`已选中 ${tile.type}，同类卡片正在旋转走动。`);
-  renderBoard();
+  renderBoard(false);
   await sleep(TYPE_DANCE_MS);
 
   state.clickedTileId = null;
   state.shakeType = null;
   state.busy = false;
   setStatus("该点击不会触发消除，操作已取消。");
-  renderBoard();
+  renderBoard(false);
   checkGameOverSoon(30);
 }
 
@@ -788,12 +997,12 @@ function clearHintSoon() {
   }
   state.hintTimer = setTimeout(() => {
     state.hintIds.clear();
-    renderBoard();
+    renderBoard(false);
   }, HINT_SHOW_MS);
 }
 
 function handleHint() {
-  if (state.busy) {
+  if (state.busy || state.mode === MODE_BATTLE) {
     return;
   }
   unlockAudio();
@@ -803,7 +1012,7 @@ function handleHint() {
   if (!directPair && !moveHint) {
     setStatus("当前无可执行操作。");
     checkGameOverSoon(30);
-    renderBoard();
+    renderBoard(false);
     return;
   }
 
@@ -817,7 +1026,7 @@ function handleHint() {
     setStatus("提示：高亮两张通过一步操作可消除的卡片。");
   }
   clearHintSoon();
-  renderBoard();
+  renderBoard(false);
 }
 
 function gatherRemainingTiles(board = state.board) {
@@ -896,8 +1105,479 @@ function forceAtLeastOnePair(board, tiles) {
   return board;
 }
 
+function canUsePeerBattle() {
+  return typeof window.Peer === "function";
+}
+
+function buildBattleInviteLink(hostId, seed) {
+  const url = new URL(window.location.href);
+  url.searchParams.set("mode", MODE_BATTLE);
+  url.searchParams.set("host", hostId);
+  url.searchParams.set("seed", seed);
+  return url.toString();
+}
+
+function clearUrlParams() {
+  const url = new URL(window.location.href);
+  url.searchParams.delete("mode");
+  url.searchParams.delete("host");
+  url.searchParams.delete("seed");
+  history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+}
+
+function buildInviteShareText(link) {
+  return `来和我 PK 果味连线消除，点开链接就能直接开局：${link}`;
+}
+
+function closeBattleConnection() {
+  const conn = state.battle.connection;
+  if (conn) {
+    conn.close();
+  }
+  state.battle.connection = null;
+  state.battle.connected = false;
+}
+
+function closeBattlePeer() {
+  const peer = state.battle.peer;
+  if (peer) {
+    peer.destroy();
+  }
+  state.battle.peer = null;
+}
+
+function teardownBattleNetwork() {
+  closeBattleConnection();
+  closeBattlePeer();
+  state.battle.role = null;
+  state.battle.connected = false;
+  if (startBattleBtn) {
+    startBattleBtn.disabled = true;
+  }
+  if (shareBattleBtn) {
+    shareBattleBtn.disabled = true;
+  }
+  if (copyBattleLinkBtn) {
+    copyBattleLinkBtn.disabled = true;
+  }
+}
+
+function updateBattleActionButtons() {
+  const isBattle = state.mode === MODE_BATTLE;
+  const isHost = state.battle.role === "host";
+  const isGuest = state.battle.role === "guest";
+  const hasInvite = Boolean(state.battle.inviteLink);
+  if (createBattleBtn) {
+    createBattleBtn.disabled = !isBattle || isGuest;
+  }
+  if (shareBattleBtn) {
+    shareBattleBtn.disabled = !isBattle || !isHost || !hasInvite;
+  }
+  if (copyBattleLinkBtn) {
+    copyBattleLinkBtn.disabled = !isBattle || !isHost || !hasInvite;
+  }
+  if (startBattleBtn) {
+    startBattleBtn.disabled = !isBattle || !isHost || !state.battle.connected;
+  }
+}
+
+async function shareBattleInvite() {
+  const link = battleLinkInput?.value || state.battle.inviteLink;
+  if (!link) {
+    setBattleStatus("请先创建房间。");
+    return;
+  }
+  const text = buildInviteShareText(link);
+  if (navigator.share) {
+    try {
+      await navigator.share({
+        title: "果味连线消除好友对战",
+        text,
+        url: link
+      });
+      setBattleStatus("分享面板已打开，发送给好友即可。");
+      return;
+    } catch (error) {
+      if (error?.name === "AbortError") {
+        setBattleStatus("已取消分享，可再次点击“一键邀请好友”。");
+        return;
+      }
+    }
+  }
+  try {
+    await copyToClipboard(link);
+    setBattleStatus("已自动复制邀请链接，直接粘贴发给好友。");
+  } catch {
+    setBattleStatus("分享失败，请手动复制链接。");
+  }
+}
+
+function sendBattleMessage(payload) {
+  const conn = state.battle.connection;
+  if (!conn || !state.battle.connected) {
+    return false;
+  }
+  conn.send(payload);
+  return true;
+}
+
+function compareBattleResult(a, b) {
+  const aWin = a?.result === "win";
+  const bWin = b?.result === "win";
+  if (aWin && !bWin) {
+    return -1;
+  }
+  if (!aWin && bWin) {
+    return 1;
+  }
+  return (a?.elapsedMs ?? Number.POSITIVE_INFINITY) - (b?.elapsedMs ?? Number.POSITIVE_INFINITY);
+}
+
+function buildBattleSummary(hostResult, guestResult) {
+  const cmp = compareBattleResult(hostResult, guestResult);
+  if (cmp < 0) {
+    return { winner: "host", hostResult, guestResult };
+  }
+  if (cmp > 0) {
+    return { winner: "guest", hostResult, guestResult };
+  }
+  return { winner: "draw", hostResult, guestResult };
+}
+
+function applyBattleSummary(summary) {
+  const isHost = state.battle.role === "host";
+  const myResult = isHost ? summary.hostResult : summary.guestResult;
+  const opponentResult = isHost ? summary.guestResult : summary.hostResult;
+  const myWin = (summary.winner === "host" && isHost) || (summary.winner === "guest" && !isHost);
+
+  let finalText = "平局";
+  if (summary.winner !== "draw") {
+    finalText = myWin ? "你赢了" : "你输了";
+  }
+  const myTimeText = `你 ${myResult.result === "win" ? "通关" : "失败"} 用时 ${formatBattleMs(myResult.elapsedMs)}`;
+  const oppTimeText = `好友 ${opponentResult.result === "win" ? "通关" : "失败"} 用时 ${formatBattleMs(opponentResult.elapsedMs)}`;
+  setStatus(`对战结算：${finalText}。`);
+  setBattleStatus(`${myTimeText}；${oppTimeText}。${finalText}`);
+  const modalType = summary.winner === "draw" ? "win" : (myWin ? "win" : "lose");
+  showResultModal(modalType);
+  if (resultTitleEl) {
+    resultTitleEl.textContent = "好友对战结果";
+  }
+  if (resultBodyEl) {
+    resultBodyEl.textContent = `${myTimeText}；${oppTimeText}；${finalText}`;
+  }
+  if (resultActionBtn) {
+    resultActionBtn.textContent = "知道了";
+  }
+  state.resultType = "battle";
+}
+
+function finalizeBattleSummaryIfHost() {
+  if (state.battle.role !== "host") {
+    return;
+  }
+  if (!state.battle.myResult || !state.battle.opponentResult) {
+    return;
+  }
+  const summary = buildBattleSummary(state.battle.myResult, state.battle.opponentResult);
+  applyBattleSummary(summary);
+  sendBattleMessage({ type: "summary", summary });
+}
+
+function handleLocalBattleRoundEnd(result) {
+  if (state.mode !== MODE_BATTLE || state.battle.myResult) {
+    return;
+  }
+  stopBattleTimer();
+  state.boardLocked = true;
+  state.battle.timerElapsedMs = Math.floor(state.battle.timerElapsedMs);
+  state.battle.myResult = {
+    result,
+    elapsedMs: state.battle.timerElapsedMs
+  };
+  setStatus(`你已${result === "win" ? "通关" : "结束本局"}，等待好友结果。`);
+  sendBattleMessage({ type: "finish", result: state.battle.myResult });
+  if (state.battle.role === "host") {
+    finalizeBattleSummaryIfHost();
+  } else {
+    setBattleStatus("已提交成绩，等待好友完成。");
+  }
+}
+
+function onBattleMessage(message) {
+  if (!message || typeof message !== "object") {
+    return;
+  }
+  if (message.type === "join" && state.battle.role === "host") {
+    setBattleStatus("好友已加入，点击“开始对战”。");
+    updateBattleActionButtons();
+    return;
+  }
+  if (message.type === "host-ready" && state.battle.role === "guest") {
+    state.battle.seed = message.seed || state.battle.seed;
+    setBattleStatus("已连接房主，等待开始。");
+    updateBattleActionButtons();
+    return;
+  }
+  if (message.type === "start") {
+    const seed = message.seed || state.battle.seed || createShortId();
+    beginBattleRound(seed, message.countdownMs || BATTLE_COUNTDOWN_MS);
+    return;
+  }
+  if (message.type === "finish") {
+    state.battle.opponentResult = message.result;
+    if (state.battle.role === "host") {
+      finalizeBattleSummaryIfHost();
+    } else if (!state.battle.myResult) {
+      setBattleStatus("好友已完成，继续加油。");
+    }
+    return;
+  }
+  if (message.type === "summary") {
+    applyBattleSummary(message.summary);
+  }
+}
+
+function attachBattleConnection(connection) {
+  if (!connection) {
+    return;
+  }
+  if (state.battle.connection && state.battle.connection !== connection) {
+    state.battle.connection.close();
+  }
+  state.battle.connection = connection;
+  connection.on("open", () => {
+    state.battle.connected = true;
+    if (state.battle.role === "guest") {
+      setBattleStatus("已连接房主，等待开始。");
+      sendBattleMessage({ type: "join" });
+    } else {
+      setBattleStatus("好友已加入，点击“开始对战”。");
+      sendBattleMessage({ type: "host-ready", seed: state.battle.seed });
+    }
+    updateBattleActionButtons();
+  });
+  connection.on("data", onBattleMessage);
+  connection.on("close", () => {
+    state.battle.connected = false;
+    updateBattleActionButtons();
+    setBattleStatus("对战连接已断开。");
+  });
+  connection.on("error", () => {
+    setBattleStatus("连接异常，请重新创建对战链接。");
+  });
+}
+
+function createPeer(role) {
+  return new Promise((resolve, reject) => {
+    if (!canUsePeerBattle()) {
+      reject(new Error("peer-unavailable"));
+      return;
+    }
+    const peer = new window.Peer();
+    state.battle.peer = peer;
+    state.battle.role = role;
+    updateBattleActionButtons();
+
+    peer.on("open", () => resolve(peer));
+    peer.on("connection", (incoming) => {
+      if (state.battle.role !== "host") {
+        incoming.close();
+        return;
+      }
+      attachBattleConnection(incoming);
+    });
+    peer.on("error", (err) => {
+      setBattleStatus(`连接失败：${err?.type || "未知错误"}`);
+      updateBattleActionButtons();
+      reject(err);
+    });
+  });
+}
+
+function prepareBoardForBattle(seed) {
+  clearInteractionEffects();
+  hideResultModal();
+  state.snapback = null;
+  state.drag = null;
+  state.busy = false;
+  state.gameOver = null;
+  state.board = initializeBoard(seed);
+  evaluateGameState();
+  renderBoard();
+}
+
+function beginBattleRound(seed, countdownMs = BATTLE_COUNTDOWN_MS) {
+  state.battle.seed = seed;
+  resetBattleRoundData();
+  prepareBoardForBattle(seed);
+  state.boardLocked = true;
+  updateBattleActionButtons();
+
+  const seconds = Math.ceil(countdownMs / 1000);
+  setBattleStatus(`对战倒计时 ${seconds} 秒...`);
+  setStatus(`好友对战即将开始，倒计时 ${seconds} 秒。`);
+  clearBattleCountdown();
+  state.battle.countdownTimer = setTimeout(() => {
+    state.boardLocked = false;
+    setStatus("好友对战进行中，先清空棋盘者获胜。");
+    setBattleStatus("对战已开始，冲刺吧。");
+    startBattleTimer();
+    renderBoard(false);
+  }, countdownMs);
+}
+
+function switchMode(mode) {
+  state.mode = mode;
+  updateModeUi();
+  syncControlAvailability();
+  updateBattleActionButtons();
+  renderBoard(false);
+}
+
+function enterHome() {
+  hideResultModal();
+  clearInteractionEffects();
+  state.drag = null;
+  state.snapback = null;
+  state.busy = false;
+  state.gameOver = null;
+  state.boardLocked = true;
+  resetBattleRoundData();
+  teardownBattleNetwork();
+  state.battle.seed = null;
+  state.battle.inviteLink = "";
+  if (battleLinkInput) {
+    battleLinkInput.value = "";
+  }
+  setBattleStatus("点击“创建房间”，然后一键邀请好友。");
+  clearUrlParams();
+  switchMode(MODE_ENDLESS);
+  setView("home");
+  setStatus("选择模式开始游戏。");
+}
+
+function enterEndlessMode() {
+  state.boardLocked = false;
+  resetBattleRoundData();
+  teardownBattleNetwork();
+  state.battle.seed = null;
+  state.battle.inviteLink = "";
+  if (battleLinkInput) {
+    battleLinkInput.value = "";
+  }
+  clearUrlParams();
+  setView("game");
+  switchMode(MODE_ENDLESS);
+  setStatus("拖拽后仅当起手选中卡片可消除时才生效。");
+  restartGame();
+}
+
+function enterBattleLobby() {
+  setView("game");
+  switchMode(MODE_BATTLE);
+  resetBattleRoundData();
+  state.boardLocked = true;
+  teardownBattleNetwork();
+  state.battle.seed = null;
+  state.battle.inviteLink = "";
+  if (battleLinkInput) {
+    battleLinkInput.value = "";
+  }
+  setBattleStatus("点击“创建房间”，然后一键邀请好友。");
+  setStatus("好友对战准备中。");
+  updateBattleActionButtons();
+}
+
+async function createBattleInvite(autoShare = false) {
+  setView("game");
+  switchMode(MODE_BATTLE);
+  resetBattleRoundData();
+  state.boardLocked = true;
+  updateBattleActionButtons();
+  if (!canUsePeerBattle()) {
+    setBattleStatus("当前环境不支持好友对战连接。");
+    return;
+  }
+
+  teardownBattleNetwork();
+  const seed = createShortId();
+  state.battle.seed = seed;
+  state.battle.inviteLink = "";
+  if (battleLinkInput) {
+    battleLinkInput.value = "";
+  }
+  updateBattleActionButtons();
+  setBattleStatus("正在创建对战房间...");
+  try {
+    const peer = await createPeer("host");
+    const link = buildBattleInviteLink(peer.id, seed);
+    state.battle.inviteLink = link;
+    if (battleLinkInput) {
+      battleLinkInput.value = link;
+    }
+    setBattleStatus("房间已创建，点击“一键邀请好友”。");
+    history.replaceState(null, "", `?mode=${MODE_BATTLE}`);
+    updateBattleActionButtons();
+    if (autoShare) {
+      shareBattleInvite();
+    }
+  } catch {
+    teardownBattleNetwork();
+    setBattleStatus("创建失败，请稍后重试。");
+    updateBattleActionButtons();
+  }
+}
+
+async function joinBattleByLink(hostId, seed) {
+  setView("game");
+  switchMode(MODE_BATTLE);
+  resetBattleRoundData();
+  state.boardLocked = true;
+  updateBattleActionButtons();
+  if (battleLinkInput) {
+    battleLinkInput.value = window.location.href;
+  }
+  if (!canUsePeerBattle()) {
+    setBattleStatus("当前环境不支持好友对战连接。");
+    return;
+  }
+
+  teardownBattleNetwork();
+  state.battle.seed = seed || createShortId();
+  state.battle.inviteLink = "";
+  updateBattleActionButtons();
+  setBattleStatus("正在连接好友房间...");
+  try {
+    const peer = await createPeer("guest");
+    const conn = peer.connect(hostId, { reliable: true });
+    attachBattleConnection(conn);
+  } catch {
+    teardownBattleNetwork();
+    setBattleStatus("连接失败，请让好友重新分享链接。");
+  }
+}
+
+function startBattleAsHost() {
+  if (state.mode !== MODE_BATTLE || state.battle.role !== "host") {
+    return;
+  }
+  if (!state.battle.connected) {
+    setBattleStatus("请先等待好友加入。");
+    return;
+  }
+  const seed = state.battle.seed || createShortId();
+  sendBattleMessage({
+    type: "start",
+    seed,
+    countdownMs: BATTLE_COUNTDOWN_MS
+  });
+  updateBattleActionButtons();
+  beginBattleRound(seed, BATTLE_COUNTDOWN_MS);
+}
+
 function handleShuffle() {
-  if (state.busy || state.gameOver === "lose") {
+  if (state.busy || state.gameOver === "lose" || state.mode === MODE_BATTLE) {
     return;
   }
   hideResultModal();
@@ -905,7 +1585,7 @@ function handleShuffle() {
   const tiles = gatherRemainingTiles();
   if (tiles.length < 2) {
     evaluateGameState();
-    renderBoard();
+    renderBoard(false);
     return;
   }
 
@@ -932,8 +1612,8 @@ function handleShuffle() {
   renderBoard();
 }
 
-function restartGame() {
-  if (state.gameOver === "lose") {
+function restartGame(seedText = null) {
+  if (state.mode === MODE_BATTLE && !seedText) {
     return;
   }
   clearInteractionEffects();
@@ -941,8 +1621,9 @@ function restartGame() {
   state.snapback = null;
   state.drag = null;
   state.busy = false;
+  state.boardLocked = state.mode === MODE_BATTLE;
   state.gameOver = null;
-  state.board = initializeBoard();
+  state.board = initializeBoard(seedText);
   evaluateGameState();
   renderBoard();
 }
@@ -973,11 +1654,23 @@ function getOffsetForTile(tileId) {
   return { x: 0, y: 0, className: "" };
 }
 
-function renderBoard() {
-  boardEl.innerHTML = "";
-  boardEl.classList.toggle("hint-focus", state.hintIds.size > 0);
+function syncTileVisualState(tileEl, tile) {
+  tileEl.classList.toggle("clicked", state.clickedTileId === tile.id);
+  tileEl.classList.toggle("shake", state.shakeType === tile.type);
+  tileEl.classList.toggle("hint", state.hintIds.has(tile.id));
+  tileEl.classList.toggle("removing", state.autoRemoveIds.has(tile.id));
+
+  const offset = getOffsetForTile(tile.id);
+  tileEl.classList.toggle("dragging", offset.className === "dragging");
+  tileEl.style.transform = `translate3d(${offset.x}px, ${offset.y}px, 0)`;
+}
+
+function rebuildTileNodes() {
+  tileElementById.clear();
+  boardEl.textContent = "";
   const widthPct = 100 / COLS;
   const heightPct = 100 / ROWS;
+  const fragment = document.createDocumentFragment();
 
   for (let row = 0; row < ROWS; row += 1) {
     for (let col = 0; col < COLS; col += 1) {
@@ -985,7 +1678,6 @@ function renderBoard() {
       if (!tile) {
         continue;
       }
-
       const tileEl = document.createElement("button");
       tileEl.type = "button";
       tileEl.className = "tile";
@@ -997,29 +1689,47 @@ function renderBoard() {
       tileEl.style.width = `${widthPct}%`;
       tileEl.style.height = `${heightPct}%`;
       tileEl.textContent = tile.type;
-
-      if (state.clickedTileId === tile.id) {
-        tileEl.classList.add("clicked");
-      }
-      if (state.shakeType === tile.type) {
-        tileEl.classList.add("shake");
-      }
-      if (state.hintIds.has(tile.id)) {
-        tileEl.classList.add("hint");
-      }
-      if (state.autoRemoveIds.has(tile.id)) {
-        tileEl.classList.add("removing");
-      }
-
-      const offset = getOffsetForTile(tile.id);
-      if (offset.className) {
-        tileEl.classList.add(offset.className);
-      }
-      tileEl.style.transform = `translate(${offset.x}px, ${offset.y}px)`;
-      boardEl.appendChild(tileEl);
+      syncTileVisualState(tileEl, tile);
+      tileElementById.set(tile.id, tileEl);
+      fragment.appendChild(tileEl);
     }
   }
+  boardEl.appendChild(fragment);
+  refreshBoardMetrics();
+}
 
+function syncTileNodesWithoutRebuild() {
+  let tileCount = 0;
+  for (let row = 0; row < ROWS; row += 1) {
+    for (let col = 0; col < COLS; col += 1) {
+      const tile = state.board[row][col];
+      if (!tile) {
+        continue;
+      }
+      tileCount += 1;
+      const tileEl = tileElementById.get(tile.id);
+      if (!tileEl) {
+        return false;
+      }
+      tileEl.dataset.row = String(row);
+      tileEl.dataset.col = String(col);
+      syncTileVisualState(tileEl, tile);
+    }
+  }
+  return tileCount === tileElementById.size;
+}
+
+function flushRenderQueue() {
+  renderScheduled = false;
+  const shouldFullRender = pendingFullRender;
+  pendingFullRender = false;
+  if (shouldFullRender || tileElementById.size === 0) {
+    rebuildTileNodes();
+  } else if (!syncTileNodesWithoutRebuild()) {
+    rebuildTileNodes();
+  }
+
+  boardEl.classList.toggle("hint-focus", state.hintIds.size > 0);
   if (statusEl) {
     statusEl.textContent = state.status;
     statusEl.dataset.state = state.gameOver || "play";
@@ -1027,8 +1737,17 @@ function renderBoard() {
   musicBtn.textContent = `音乐：${state.musicEnabled ? "开" : "关"}`;
 }
 
+function renderBoard(fullRender = true) {
+  pendingFullRender = pendingFullRender || fullRender;
+  if (renderScheduled) {
+    return;
+  }
+  renderScheduled = true;
+  requestAnimationFrame(flushRenderQueue);
+}
+
 function onPointerDown(event) {
-  if (state.busy) {
+  if (state.busy || state.boardLocked) {
     return;
   }
   const target = event.target.closest(".tile");
@@ -1089,7 +1808,7 @@ function onPointerMove(event) {
   const maxPx = drag.maxStep * cellSize;
   const raw = drag.direction === "h" ? dx * drag.sign : dy * drag.sign;
   drag.deltaPx = Math.max(0, Math.min(raw, maxPx));
-  renderBoard();
+  renderBoard(false);
 }
 
 function endDrag(event) {
@@ -1129,7 +1848,7 @@ function toggleMusic() {
     state.music.stop();
     setStatus("背景音乐已关闭。");
   }
-  renderBoard();
+  renderBoard(false);
 }
 
 boardEl.addEventListener("pointerdown", onPointerDown);
@@ -1142,15 +1861,56 @@ hintBtn.addEventListener("click", handleHint);
 shuffleBtn.addEventListener("click", handleShuffle);
 restartBtn.addEventListener("click", restartGame);
 musicBtn.addEventListener("click", toggleMusic);
+if (homeEndlessBtn) {
+  homeEndlessBtn.addEventListener("click", enterEndlessMode);
+}
+if (homeBattleBtn) {
+  homeBattleBtn.addEventListener("click", () => {
+    enterBattleLobby();
+    createBattleInvite(true);
+  });
+}
+if (backHomeBtn) {
+  backHomeBtn.addEventListener("click", enterHome);
+}
+if (createBattleBtn) {
+  createBattleBtn.addEventListener("click", createBattleInvite);
+}
+if (shareBattleBtn) {
+  shareBattleBtn.addEventListener("click", shareBattleInvite);
+}
+if (copyBattleLinkBtn) {
+  copyBattleLinkBtn.addEventListener("click", async () => {
+    const link = battleLinkInput?.value || state.battle.inviteLink;
+    try {
+      await copyToClipboard(link);
+      setBattleStatus("已复制邀请链接，发到群里即可拉人开战。");
+    } catch {
+      setBattleStatus("复制失败，请手动复制链接。");
+    }
+  });
+}
+if (startBattleBtn) {
+  startBattleBtn.addEventListener("click", startBattleAsHost);
+}
 if (resultActionBtn) {
   resultActionBtn.addEventListener("click", () => {
-    if (state.resultType === "win") {
+    if (state.resultType === "battle") {
+      hideResultModal();
+      return;
+    }
+    if (state.resultType === "win" && state.mode === MODE_ENDLESS) {
       restartGame();
       return;
     }
     hideResultModal();
   });
 }
-window.addEventListener("resize", renderBoard);
+window.addEventListener("resize", () => {
+  refreshBoardMetrics();
+  renderBoard(false);
+});
 
+setView("game");
+switchMode(MODE_ENDLESS);
 restartGame();
